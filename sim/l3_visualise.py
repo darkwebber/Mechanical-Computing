@@ -17,7 +17,7 @@ import pymunk.pygame_util
 import pygame
 
 from l3_lane import (
-    LaneSimulator, _make_cam, _make_follower, _make_rack_with_stiffness,
+    LaneSimulator, _make_static_cam, _make_follower, _make_rack_with_detent,
     CAM_CENTER, CAM_BASE_RADIUS, LOBE_HEIGHTS,
     FOLLOWER_PIVOT, FOLLOWER_LEN,
     RACK_X, RACK_Y0, RACK_TOOTH_PITCH,
@@ -83,9 +83,10 @@ class LaneVis:
         self.space = pymunk.Space()
         self.space.gravity = (0, -9810)
         self.space.damping = 0.95
-        self.cam_body, self.cam_shape = _make_cam(self.space, weight_state)
-        self.follower_body, self.follower_seg = _make_follower(self.space)
-        self.rack_body = _make_rack_with_stiffness(self.space, 10.0)
+        lobe_h = LOBE_HEIGHTS[max(-2, min(2, weight_state)) + 2]
+        self.cam_body = _make_static_cam(self.space, lobe_h)
+        self.follower_body = _make_follower(self.space)
+        self.rack_body, self.rack_anchor = _make_rack_with_detent(self.space, 10000.0)
         if not self.headless:
             self.draw_opts = pymunk.pygame_util.DrawOptions(self.screen)
             self.draw_opts.flags = pymunk.pygame_util.DrawOptions.DRAW_SHAPES

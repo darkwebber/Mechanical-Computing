@@ -210,6 +210,216 @@ function FeatureGrid({ pooled, currentF }) {
   );
 }
 
+// ── Mechanical rack view ──────────────────────────────────────────────────────
+
+const LANE_HEX = ['#C84646','#CD7820','#A49A05','#418C3A','#1C807A',
+                  '#1C58AC','#4E35AC','#8C2A98','#B62662','#8A842A'];
+const W_HEX = {'-2':'#D23208','-1':'#D7821F','0':'#A8A49A','1':'#329A4C','2':'#146E33'};
+
+function _drawMachine(canvas, springs, renderState) {
+  const { curWeightRow, curF, isDone, prediction } = renderState;
+  const ctx = canvas.getContext('2d');
+  const CW = canvas.width, CH = canvas.height;
+  const NL = 10, LANE_W = CW / NL;
+  const CAM_Y    = 22;
+  const GT       = 44;                    // groove top
+  const GB       = CH - 36;              // groove bottom
+  const GH       = GB - GT;
+  const CY       = GT + GH / 2;          // zero line y
+  const TRAVEL   = GH / 2 - 6;           // px max travel
+  const TOOTH_PX = 9;                     // px between tooth marks
+  const RW = 22, RH = 18;
+
+  // background
+  ctx.fillStyle = '#F5F2EB';
+  ctx.fillRect(0, 0, CW, CH);
+
+  // progress bar (top)
+  if (curF >= 0) {
+    const pct = (curF + 1) / 49;
+    ctx.fillStyle = '#1B4F8A';
+    ctx.fillRect(0, 0, CW * pct, 5);
+  }
+
+  // cam shaft rail
+  ctx.fillStyle = '#B8B5AB';
+  const railY = CAM_Y - 5;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(0, railY, CW, 10, 2);
+  else ctx.rect(0, railY, CW, 10);
+  ctx.fill();
+
+  // lane separators
+  ctx.strokeStyle = '#E0DDD5';
+  ctx.lineWidth = 1;
+  for (let d = 1; d < NL; d++) {
+    ctx.beginPath(); ctx.moveTo(LANE_W * d, 34); ctx.lineTo(LANE_W * d, CH - 26); ctx.stroke();
+  }
+
+  // feature / done labels
+  ctx.font = 'bold 10px monospace';
+  ctx.fillStyle = '#1B4F8A';
+  ctx.textAlign = 'left';
+  if (curF >= 0) ctx.fillText(`Feature ${curF + 1} / 49`, 4, GT - 5);
+  if (isDone) {
+    ctx.fillStyle = '#1E6B45';
+    ctx.textAlign = 'right';
+    ctx.fillText(`→  Digit  ${prediction}  wins`, CW - 4, GT - 5);
+  }
+
+  for (let d = 0; d < NL; d++) {
+    const cx = LANE_W * d + LANE_W / 2;
+    const sp = springs?.[d] ?? { pos: 0 };
+    // clamp rack to groove bounds
+    const rawY = CY - sp.pos;
+    const sy   = Math.max(GT + RH / 2 + 2, Math.min(GB - RH / 2 - 2, rawY));
+
+    // groove
+    ctx.fillStyle = '#C8C4B4';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - 10, GT, 20, GH, 4);
+    else ctx.rect(cx - 10, GT, 20, GH);
+    ctx.fill();
+
+    ctx.fillStyle = '#BAB6A6';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - 7, GT + 2, 14, GH - 4, 3);
+    else ctx.rect(cx - 7, GT + 2, 14, GH - 4);
+    ctx.fill();
+
+    // tooth marks
+    ctx.strokeStyle = '#A8A498';
+    ctx.lineWidth = 0.8;
+    for (let ty = GT + TOOTH_PX * 0.5; ty < GB; ty += TOOTH_PX) {
+      ctx.beginPath(); ctx.moveTo(cx - 10, ty); ctx.lineTo(cx + 10, ty); ctx.stroke();
+    }
+
+    // zero line
+    ctx.strokeStyle = '#888480';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(cx - 13, CY); ctx.lineTo(cx + 13, CY); ctx.stroke();
+
+    // displacement fill
+    const fillTop = Math.min(sy + RH / 2, CY);
+    const fillBot = Math.max(sy - RH / 2, CY);
+    const fh = Math.abs(fillBot - fillTop);
+    if (fh > 1) {
+      ctx.fillStyle = sp.pos >= 0 ? '#1E6B4550' : '#B85C0050';
+      ctx.fillRect(cx - 5, fillTop, 10, fh);
+    }
+
+    // rack body — shadow then body
+    ctx.fillStyle = '#00000030';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - RW/2 + 2, sy - RH/2 + 2, RW, RH, 3);
+    else ctx.rect(cx - RW/2 + 2, sy - RH/2 + 2, RW, RH);
+    ctx.fill();
+
+    ctx.fillStyle = LANE_HEX[d];
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - RW/2, sy - RH/2, RW, RH, 3);
+    else ctx.rect(cx - RW/2, sy - RH/2, RW, RH);
+    ctx.fill();
+
+    // specular highlight
+    ctx.fillStyle = '#FFFFFF35';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - RW/2 + 2, sy - RH/2 + 2, RW - 4, 4, 1);
+    else ctx.rect(cx - RW/2 + 2, sy - RH/2 + 2, RW - 4, 4);
+    ctx.fill();
+
+    // predicted win star
+    if (isDone && d === prediction) {
+      ctx.fillStyle = '#C3A014';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('★', cx, sy - RH / 2 - 4);
+    }
+
+    // cam lobe indicator on shaft
+    const w = curWeightRow ? curWeightRow[d] : 0;
+    ctx.fillStyle = W_HEX[String(w)] ?? '#888';
+    ctx.beginPath(); ctx.arc(cx, CAM_Y, 11, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#FFFFFF50'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    ctx.fillStyle = '#FFF';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText((w > 0 ? '+' : '') + w, cx, CAM_Y + 3);
+
+    // digit label
+    ctx.fillStyle = LANE_HEX[d];
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(d), cx, CH - 8);
+  }
+}
+
+function MechanicalRackView({ accs, bias, finalScores, curWeightRow, curF, isDone, prediction }) {
+  const canvasRef  = useRef(null);
+  const physRef    = useRef(null);
+  const renderRef  = useRef({ curWeightRow, curF, isDone, prediction });
+  const frameRef   = useRef(null);
+  const TRAVEL_PX  = 110;   // maximum pixel travel (half the groove height)
+
+  // sync render-state ref (so animation loop always sees latest props)
+  useEffect(() => {
+    renderRef.current = { curWeightRow, curF, isDone, prediction };
+  }, [curWeightRow, curF, isDone, prediction]);
+
+  // initialise spring states once
+  useEffect(() => {
+    physRef.current = bias.map(() => ({ pos: 0, vel: 0, target: 0 }));
+  }, [bias]);
+
+  // update spring targets when accs changes
+  useEffect(() => {
+    if (!physRef.current || !accs) return;
+    // normalization: use the final scores range so the animation is stable
+    const ref = finalScores
+      ? finalScores.map((s, d) => s - bias[d])
+      : accs.map((a, d) => a - bias[d]);
+    const maxAbs = Math.max(Math.max(...ref.map(Math.abs)), 1);
+    const scale  = TRAVEL_PX / maxAbs;
+    accs.forEach((a, d) => {
+      if (!physRef.current[d]) return;
+      const net = a - bias[d];
+      physRef.current[d].target = Math.max(-TRAVEL_PX, Math.min(TRAVEL_PX, net * scale));
+    });
+  }, [accs, bias, finalScores]);
+
+  // animation loop — spring-mass stepping
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const K = 0.13, DAMP = 0.24;
+    function tick() {
+      if (physRef.current) {
+        physRef.current = physRef.current.map(s => {
+          const acc = -K * (s.pos - s.target);
+          const vel = (s.vel + acc) * (1 - DAMP);
+          return { pos: s.pos + vel, vel, target: s.target };
+        });
+      }
+      _drawMachine(canvas, physRef.current, renderRef.current);
+      frameRef.current = requestAnimationFrame(tick);
+    }
+    frameRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, []);   // intentionally empty — loop runs for component lifetime
+
+  return (
+    <div>
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: C.grey, marginBottom: 6, letterSpacing: 0.5 }}>
+        MECHANICAL VIEW — 10 ACCUMULATOR RACKS  (spring physics)
+      </div>
+      <canvas ref={canvasRef} width={880} height={310}
+        style={{ width: "100%", height: "auto", display: "block",
+                 borderRadius: 4, border: `1px solid ${C.rule}` }} />
+    </div>
+  );
+}
+
 // ── Accumulator animation ─────────────────────────────────────────────────────
 
 function AccumulatorBars({ accs, bias, final }) {
@@ -301,12 +511,13 @@ export default function SimDemo() {
   const stopAnim  = () => { clearTimeout(animRef.current); setAnimating(false); };
   const resetAnim = () => { stopAnim(); setEventIdx(0); };
 
-  const curEvent  = events[eventIdx] ?? null;
-  const curAccs   = curEvent?.accs ?? bias;
-  const curF      = curEvent?.kind === "PULSE" || curEvent?.kind === "FEATURE_START"
-                    ? curEvent.f : (curEvent?.kind === "FEATURE_END" ? curEvent.f : -1);
-  const isDone    = curEvent?.kind === "DONE";
+  const curEvent   = events[eventIdx] ?? null;
+  const curAccs    = curEvent?.accs ?? bias;
+  const curF       = curEvent?.kind === "PULSE" || curEvent?.kind === "FEATURE_START"
+                     ? curEvent.f : (curEvent?.kind === "FEATURE_END" ? curEvent.f : -1);
+  const isDone     = curEvent?.kind === "DONE";
   const prediction = scores ? scores.indexOf(Math.max(...scores)) : null;
+  const curWeightRow = curF >= 0 ? weights[curF] : null;
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: C.ink }}>
@@ -378,6 +589,59 @@ export default function SimDemo() {
             )}
           </div>
         </div>
+
+        {/* ── Row 1b: Mechanical rack simulation ── */}
+        {pooled && (
+          <div style={{ background: C.panel, border: `1px solid ${C.rule}`, borderRadius: 6, padding: 16, marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: C.amber, letterSpacing: 0.5 }}>
+                LAYER 2 — MECHANICAL SIMULATION  (10 accumulator lanes, spring physics)
+              </div>
+              <div style={{ fontSize: 11, color: C.grey }}>
+                Cam lobes → rack advances → detent snaps → score
+              </div>
+            </div>
+            <MechanicalRackView
+              accs={curAccs}
+              bias={bias}
+              finalScores={scores}
+              curWeightRow={curWeightRow}
+              curF={curF}
+              isDone={isDone}
+              prediction={prediction}
+            />
+            <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {["▶ Play","■ Stop","↺ Reset"].map((label, i) => (
+                <button key={i}
+                  onClick={[startAnim, stopAnim, resetAnim][i]}
+                  disabled={!events.length || (i === 0 && animating)}
+                  style={{
+                    padding: "5px 14px", border: `1px solid ${C.rule}`, borderRadius: 3,
+                    background: !events.length ? C.greyFill : C.blueFill,
+                    color: !events.length ? C.grey : C.blue,
+                    cursor: "pointer", fontFamily: "monospace", fontSize: 12,
+                    opacity: (!events.length || (i === 0 && animating)) ? 0.4 : 1,
+                  }}>{label}
+                </button>
+              ))}
+              {events.length > 0 && (
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <input type="range" min={0} max={events.length - 1} value={eventIdx}
+                    onChange={e => { stopAnim(); setEventIdx(+e.target.value); }}
+                    style={{ width: "100%", accentColor: C.amber }} />
+                </div>
+              )}
+              {curEvent && (
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: C.grey }}>
+                  <span style={{ color: C.blueL, fontWeight: 700 }}>{curEvent.kind}</span>
+                  {curEvent.kind === "FEATURE_START" && ` f=${curEvent.f} count=${curEvent.count}`}
+                  {curEvent.kind === "PULSE" && ` f=${curEvent.f} p=${curEvent.p}`}
+                  {curEvent.kind === "DONE" && ` → digit ${curEvent.prediction} wins`}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Row 2: L1 scores + L2 animation ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
